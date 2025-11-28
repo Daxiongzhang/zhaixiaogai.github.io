@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>宅小改门店地图（北京蓝绿色高亮版）</title>
+  <title>宅小改门店地图（北京固定中心版）</title>
   <script type="text/javascript" src="https://webapi.amap.com/maps?v=1.4.15&key=6922e44c35671e12ff680f8005e9564b"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -55,69 +55,54 @@
 <body>
   <div id="mapContainer"></div>
   <div class="loading" id="loading">地图加载中...</div>
-  <div class="control-hint">按"1"键显示/隐藏北京板块高亮 | 点击标记看门店信息</div>
+  <div class="control-hint">固定北京为中心缩放 | 点击标记看门店信息</div>
 
   <script>
     window.onload = function() {
       const loading = document.getElementById('loading');
       let map;
 
-      // 北京区域精确坐标（覆盖全北京行政范围）
-      const beijingFullPath = [
-        [115.4187, 39.4416], [115.7471, 39.9147], [115.9686, 40.2157],
-        [116.2227, 40.4663], [116.5889, 40.6504], [116.9626, 40.7172],
-        [117.2306, 40.6779], [117.5315, 40.5212], [117.7856, 40.2606],
-        [117.8643, 39.9447], [117.8250, 39.6288], [117.6883, 39.3129],
-        [117.4530, 39.0335], [117.1314, 38.8594], [116.7754, 38.7826],
-        [116.3917, 38.8020], [116.0080, 38.8605], [115.6649, 39.0172],
-        [115.4187, 39.4416]
-      ];
+      // 北京固定中心点坐标（精准定位北京中心）
+      const BEIJING_CENTER = [116.403874, 39.914885];
 
-      let beijingHighlight; // 北京板块高亮层
-      let isHighlightShow = false;
-
-      // 1. 初始化地图
+      // 1. 初始化地图（默认中心为北京）
       map = new AMap.Map('mapContainer', {
-        zoom: 9, center: [116.4, 40.2],
+        zoom: 10, // 初始缩放级别（北京全貌）
+        center: BEIJING_CENTER, // 固定初始中心
         mapStyle: "amap://styles/grey",
-        resizeEnable: true, zoomEnable: true, dragEnable: true
+        resizeEnable: true,
+        dragEnable: true, // 允许拖动地图
+        zoomEnable: true, // 允许缩放
+        scrollWheel: true, // 鼠标滚轮缩放
+        doubleClickZoom: true, // 双击放大
+        touchZoom: true // 触摸缩放
       });
 
-      // 地图加载完成立即显示门店和初始化高亮层
+      // 核心逻辑：锁定缩放中心点为北京——不管当前地图拖到哪，缩放时都围绕北京中心
+      map.on('zoomstart', function() {
+        // 缩放开始时，强制设置地图中心点为北京
+        map.setCenter(BEIJING_CENTER);
+      });
+
+      // 优化体验：拖动地图后，若缩放仍回到北京中心
+      map.on('zoomend', function() {
+        // 确保缩放结束后中心还是北京（防止特殊情况偏移）
+        map.setCenter(BEIJING_CENTER);
+      });
+
+      // 地图加载完成
       map.on('complete', function() {
         loading.style.display = 'none';
-        addStoreMarkers();
-        initBeijingHighlight();
+        addStoreMarkers(); // 加载门店标记
       });
 
-      // 2. 初始化北京高亮层（蓝绿色配置）
-      function initBeijingHighlight() {
-        beijingHighlight = new AMap.Polygon({
-          path: beijingFullPath,
-          fillColor: '#00CFB4', // 蓝绿色（醒目且协调）
-          fillOpacity: 0.6, // 透明度适中，不遮挡地图
-          strokeColor: '#E6FFFA', // 浅蓝绿色边框，对比清晰
-          strokeWeight: 4, // 粗边框，勾勒北京边界
-          zIndex: 100
-        });
-        // 初始隐藏，按键显示
-        beijingHighlight.setMap(null);
-      }
-
-      // 3. 按"1"键控制显示/隐藏
-      document.addEventListener('keydown', function(e) {
-        if (e.key === '1') {
-          isHighlightShow = !isHighlightShow;
-          if (isHighlightShow) {
-            beijingHighlight.setMap(map); // 显示蓝绿色北京板块
-            map.setZoomAndCenter(10, [116.4, 40.2]); // 自动聚焦北京
-          } else {
-            beijingHighlight.setMap(null); // 隐藏高亮
-          }
-        }
+      // 加载失败处理
+      map.on('error', function(err) {
+        loading.textContent = '地图加载失败，刷新重试';
+        console.error('地图加载错误:', err);
       });
 
-      // 4. 门店标记
+      // 2. 门店标记（正常显示，不遮挡）
       const stores = [
         { id:1, name:"宅小改京客隆望京店", lnglat:[116.49238,39.99157], addr:"北京市朝阳区望京南湖中园211号楼1楼" },
         { id:2, name:"宅小改京客隆甜水园店", lnglat:[116.47682,39.93874], addr:"北京市朝阳区甜水园北里16号楼B1" },
@@ -136,18 +121,45 @@
               imageSize: new AMap.Size(32, 32),
               imageOffset: new AMap.Pixel(-16, -32)
             }),
-            zIndex: 200, title: store.name
+            zIndex: 200, // 标记在最上层
+            title: store.name,
+            anchor: 'bottom-center'
           });
 
+          // 点击标记显示门店信息
           const popup = new AMap.Popup({
             content: `<div class="custom-bubble"><strong>${store.name}</strong><p>${store.addr}</p></div>`,
-            offset: new AMap.Pixel(0, -40)
+            offset: new AMap.Pixel(0, -40),
+            closeWhenClickMap: true,
+            autoMove: true
           });
 
-          marker.on('click', () => popup.open(map, store.lnglat));
+          marker.on('click', () => {
+            popup.open(map, store.lnglat);
+            marker.setScale(1.2);
+            setTimeout(() => marker.setScale(1), 300);
+          });
+
+          // 鼠标悬停放大标记
+          marker.on('mouseover', () => {
+            marker.setScale(1.3);
+            marker.setZIndex(300);
+          });
+
+          marker.on('mouseout', () => {
+            marker.setScale(1);
+            marker.setZIndex(200);
+          });
+
           marker.setMap(map);
         });
       }
+
+      // 窗口 resize 时，保持中心为北京
+      window.addEventListener('resize', function() {
+        map.resize();
+        map.setCenter(BEIJING_CENTER);
+      });
     };
   </script>
 </body>
