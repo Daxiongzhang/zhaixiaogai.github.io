@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>宅小改门店地图（竖屏9:16强制规格框）</title>
+  <title>宅小改门店地图（气泡颜色区分版）</title>
   <script type="text/javascript" src="https://webapi.amap.com/maps?v=1.4.15&key=6922e44c35671e12ff680f8005e9564b"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -11,40 +11,46 @@
       background: #1a1a1a;
       padding: 10px;
       overflow: hidden;
-      display: flex; /* 弹性布局，强制容器居中 */
-      justify-content: center; /* 水平居中 */
-      align-items: center; /* 垂直居中 */
-      min-height: 100vh; /*  body 高度占满屏幕 */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
     }
-    /* 核心：强制竖屏9:16规格框（绝对不会失效） */
     #mapContainer {
-      width: 95vw; /* 最大宽度占屏幕95%（留边距） */
-      max-width: 480px; /* 限制最大宽度（防止平板/电脑上太宽） */
-      height: calc(95vw * 16 / 9); /* 高度=宽度×16/9，严格9:16 */
-      max-height: calc(100vh - 40px); /* 最大高度不超过屏幕-40px（留边距） */
+      width: 95vw;
+      max-width: 480px;
+      height: calc(95vw * 16 / 9);
+      max-height: calc(100vh - 40px);
       border-radius: 8px;
-      box-shadow: 0 0 20px rgba(0,0,0,0.8); /* 加深阴影，凸显规格框 */
-      border: 2px solid #333; /* 加边框，让规格框更明显 */
+      box-shadow: 0 0 20px rgba(0,0,0,0.8);
+      border: 2px solid #333;
     }
+    /* 不同门店气泡颜色（5种区分色，统一圆角和阴影） */
+    .bubble-1 { background: #FF7A30 !important; } /* 橙红 */
+    .bubble-2 { background: #00CFB4 !important; } /* 蓝绿 */
+    .bubble-3 { background: #7B68EE !important; } /* 紫蓝 */
+    .bubble-4 { background: #FFD700 !important; } /* 金黄 */
+    .bubble-5 { background: #FF4500 !important; } /* 大红 */
     .custom-bubble {
       padding: 10px 12px;
       border-radius: 8px;
       color: #fff;
       font-size: 14px;
       max-width: 220px;
-      background: #FF7A30 !important;
       box-shadow: 0 4px 15px rgba(0,0,0,0.4);
       border: none;
+      font-weight: 500;
     }
     .custom-bubble strong {
       font-size: 15px;
       display: block;
       margin-bottom: 4px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
     }
     .custom-bubble p {
       font-size: 12px;
       line-height: 1.4;
-      opacity: 0.9;
+      opacity: 0.95;
       margin: 0;
     }
     .loading {
@@ -73,21 +79,24 @@
       backdrop-filter: blur(4px);
       white-space: nowrap;
     }
-    /* 横屏强制适配（旋转手机也保持9:16） */
     @media (orientation: landscape) {
       #mapContainer {
-        width: calc(95vh * 9 / 16); /* 宽度=屏幕高度×9/16 */
-        height: 95vh; /* 高度占满屏幕95% */
-        max-width: none; /* 取消最大宽度限制 */
-        max-height: none; /* 取消最大高度限制 */
+        width: calc(95vh * 9 / 16);
+        height: 95vh;
+        max-width: none;
+        max-height: none;
       }
+    }
+    @media (max-width: 480px) {
+      .custom-bubble { max-width: 160px; font-size: 13px; }
+      .custom-bubble strong { font-size: 14px; }
     }
   </style>
 </head>
 <body>
   <div id="mapContainer"></div>
   <div class="loading" id="loading">地图加载中...</div>
-  <div class="control-hint">强制9:16规格框 | 北京固定中心 | 最大放大至全区域</div>
+  <div class="control-hint">气泡颜色区分 | 9:16规格框 | 北京固定中心</div>
 
   <script>
     window.onload = function() {
@@ -96,16 +105,16 @@
 
       // 核心配置
       const BEIJING_CENTER = [116.403874, 39.914885];
-      const MAX_ZOOM = 9; // 无街道，北京全区域
+      const MAX_ZOOM = 9;
       const MIN_ZOOM = 3;
       const mapContainer = document.getElementById('mapContainer');
 
-      // 1. 初始化地图（强制适配规格框）
+      // 1. 初始化地图
       map = new AMap.Map(mapContainer, {
         zoom: 9,
         center: BEIJING_CENTER,
         mapStyle: "amap://styles/grey",
-        resizeEnable: true, // 关键：容器大小变化时自动适配
+        resizeEnable: true,
         dragEnable: true,
         zoomEnable: true,
         scrollWheel: true,
@@ -143,16 +152,16 @@
         }
       });
 
-      // 3. 确保地图加载后立即适配规格框
+      // 3. 地图加载完成处理
       map.on('complete', function() {
         loading.style.display = 'none';
         addStoreMarkers();
-        map.resize(); // 强制地图适配规格框尺寸
+        map.resize();
       });
 
-      // 4. 窗口变化时，强制规格框和地图适配
+      // 4. 窗口变化适配
       window.addEventListener('resize', function() {
-        map.resize(); // 关键：窗口变化后重新适配
+        map.resize();
         map.setCenter(BEIJING_CENTER);
       });
 
@@ -162,13 +171,43 @@
         console.error('地图加载错误:', err);
       });
 
-      // 5. 门店标记
+      // 5. 门店标记（绑定对应气泡颜色）
       const stores = [
-        { id:1, name:"宅小改京客隆望京店", lnglat:[116.49238,39.99157], addr:"北京市朝阳区望京南湖中园211号楼1楼" },
-        { id:2, name:"宅小改京客隆甜水园店", lnglat:[116.47682,39.93874], addr:"北京市朝阳区甜水园北里16号楼B1" },
-        { id:3, name:"宅小改京客隆针织路店", lnglat:[116.47895,39.93261], addr:"北京市朝阳区金台北街7号1楼" },
-        { id:4, name:"宅小改西单商场天通苑购物中心店", lnglat:[116.46871,40.07653], addr:"北京市昌平区天通苑购物中心B1" },
-        { id:5, name:"宅小改久隆百货店", lnglat:[116.49872,39.98015], addr:"北京市朝阳区酒仙桥路39号久隆百货B1" }
+        { 
+          id:1, 
+          name:"宅小改京客隆望京店", 
+          lnglat:[116.49238,39.99157], 
+          addr:"北京市朝阳区望京南湖中园211号楼1楼",
+          bubbleClass: "bubble-1" // 对应橙红色气泡
+        },
+        { 
+          id:2, 
+          name:"宅小改京客隆甜水园店", 
+          lnglat:[116.47682,39.93874], 
+          addr:"北京市朝阳区甜水园北里16号楼B1",
+          bubbleClass: "bubble-2" // 对应蓝绿色气泡
+        },
+        { 
+          id:3, 
+          name:"宅小改京客隆针织路店", 
+          lnglat:[116.47895,39.93261], 
+          addr:"北京市朝阳区金台北街7号1楼",
+          bubbleClass: "bubble-3" // 对应紫蓝色气泡
+        },
+        { 
+          id:4, 
+          name:"宅小改西单商场天通苑购物中心店", 
+          lnglat:[116.46871,40.07653], 
+          addr:"北京市昌平区天通苑购物中心B1",
+          bubbleClass: "bubble-4" // 对应金黄色气泡
+        },
+        { 
+          id:5, 
+          name:"宅小改久隆百货店", 
+          lnglat:[116.49872,39.98015], 
+          addr:"北京市朝阳区酒仙桥路39号久隆百货B1",
+          bubbleClass: "bubble-5" // 对应大红色气泡
+        }
       ];
 
       function addStoreMarkers() {
@@ -186,8 +225,9 @@
             anchor: 'bottom-center'
           });
 
+          // 气泡绑定对应颜色类
           const popup = new AMap.Popup({
-            content: `<div class="custom-bubble"><strong>${store.name}</strong><p>${store.addr}</p></div>`,
+            content: `<div class="custom-bubble ${store.bubbleClass}"><strong>${store.name}</strong><p>${store.addr}</p></div>`,
             offset: new AMap.Pixel(0, -40),
             closeWhenClickMap: true,
             autoMove: true
