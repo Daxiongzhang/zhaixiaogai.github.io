@@ -121,19 +121,19 @@
         { id:5, name:"宅小改久隆百货店", lnglat:[116.49872,39.98015], addr:"北京市朝阳区酒仙桥路39号久隆百货B1" }
       ];
 
-      // 核心变量：确保边界数据全局可访问
+      // 核心变量
       let beijingBorder = [];
-      let highlightPolygon = null;
+      let highlightPolygon = null; // 北京板块填充多边形
       let borderPolyline = null;
       let isSelected = false;
       let hoverTimer = null;
 
-      // 第一步：优先初始化地图（确保基础功能可用）
+      // 1. 初始化地图
       try {
         map = new AMap.Map('mapContainer', {
-          zoom: 10,
+          zoom: 10, // 初始显示北京全貌
           center: [116.4, 40.2],
-          mapStyle: "amap://styles/grey",
+          mapStyle: "amap://styles/grey", // 深灰色底图，突出高亮色
           resizeEnable: true,
           dragEnable: true,
           zoomEnable: true,
@@ -143,17 +143,11 @@
           labels: true
         });
 
-        // 地图加载完成后，再加载所有依赖功能
+        // 地图加载完成后加载所有功能
         map.on('complete', function() {
           loading.style.display = 'none';
-          
-          // 1. 加载门店标记（基础功能优先）
           addStoreMarkers();
-          
-          // 2. 加载北京边界（高亮功能核心，单独处理加载逻辑）
-          loadBeijingBorder();
-          
-          // 3. 加载标签控制（隐藏亚洲视角国家名称）
+          loadBeijingBorder(); // 优先加载北京边界
           initLabelControl();
         });
 
@@ -167,7 +161,7 @@
         return;
       }
 
-      // 第二步：修复门店标记（确保正常显示）
+      // 2. 门店标记
       function addStoreMarkers() {
         try {
           stores.forEach(store => {
@@ -190,7 +184,7 @@
               position: store.lnglat,
               title: store.name,
               icon: markerIcon,
-              zIndex: 100,
+              zIndex: 200, // 标记在高亮层上方，不被遮挡
               anchor: 'bottom-center'
             });
 
@@ -202,13 +196,13 @@
 
             marker.on('mouseover', () => {
               marker.setScale(1.3);
-              marker.setZIndex(200);
+              marker.setZIndex(300);
               marker.getIcon().setSize(new AMap.Size(36, 36));
             });
 
             marker.on('mouseout', () => {
               marker.setScale(1);
-              marker.setZIndex(100);
+              marker.setZIndex(200);
               marker.getIcon().setSize(new AMap.Size(32, 32));
             });
 
@@ -219,95 +213,101 @@
         }
       }
 
-      // 第三步：修复北京边界加载（关键！解决高亮失效核心）
+      // 3. 加载北京边界（核心：确保获取完整边界）
       function loadBeijingBorder() {
-        // 确保DistrictSearch插件加载成功后再执行
         AMap.plugin('AMap.DistrictSearch', function() {
           const districtSearch = new AMap.DistrictSearch({
-            extensions: 'all', // 必须带all，才能获取边界坐标
-            subdistrict: 0
+            extensions: 'all', // 必须带all，否则没有边界坐标
+            subdistrict: 0, // 只获取北京本身，不包含下级区域
+            level: 'city' // 明确搜索级别为城市
           });
 
-          // 搜索北京市，获取边界数据
+          // 搜索北京市
           districtSearch.search('北京市', function(status, result) {
             if (status === 'complete' && result.districtList && result.districtList[0]) {
               beijingBorder = result.districtList[0].boundaries;
-              console.log('北京边界加载成功，坐标数量:', beijingBorder.length);
-              
-              // 边界加载成功后，绑定所有交互事件（确保事件能触发）
-              bindBeijingInteractions();
+              console.log('北京边界加载成功，共', beijingBorder.length, '个区域');
+              bindBeijingInteractions(); // 绑定高亮事件
             } else {
-              console.error('北京边界加载失败，状态:', status, '结果:', result);
-              // 加载失败时重试一次（提高成功率）
-              setTimeout(() => districtSearch.search('北京市', arguments.callee), 1000);
+              console.error('北京边界加载失败，重试一次');
+              setTimeout(() => districtSearch.search('北京市', arguments.callee), 1500);
             }
           });
         });
       }
 
-      // 第四步：绑定北京区域交互事件（单独分离，确保边界加载后才绑定）
+      // 4. 北京板块高亮交互（重点优化！）
       function bindBeijingInteractions() {
-        // 1. 按"1"键高亮/取消高亮
+        // 按"1"键：填充北京板块颜色
         document.addEventListener('keydown', function(e) {
           if (e.key === '1' && beijingBorder.length > 0) {
             isSelected = !isSelected;
 
-            // 先移除原有边界线
+            // 移除原有边界线
             if (borderPolyline) {
               map.remove(borderPolyline);
               borderPolyline = null;
             }
 
             if (isSelected) {
-              // 创建高亮多边形（填充+边框）
-              highlightPolygon = new AMap.Polygon({
-                path: beijingBorder, // 直接使用完整边界（支持多环区域）
-                fillColor: '#FF7A30',
-                fillOpacity: 0.3, // 提高透明度，更清晰
-                strokeColor: '#FF7A30',
-                strokeWeight: 4,
-                strokeOpacity: 1,
-                strokeDasharray: [5, 5],
-                zIndex: 50
+              // 清除原有高亮（防止重复创建）
+              if (highlightPolygon) {
+                map.remove(highlightPolygon);
+                highlightPolygon = [];
+              }
+
+              // 关键：北京边界是多环（比如市区+郊区），需要循环创建多边形
+              beijingBorder.forEach((path, index) => {
+                const polygon = new AMap.Polygon({
+                  path: path, // 每个环的坐标
+                  fillColor: '#FF7A30', // 高亮填充色（和门店弹窗同色，统一风格）
+                  fillOpacity: 0.4, // 透明度适中，不遮挡地图细节
+                  strokeColor: '#FF4500', // 边框色（更深的橙色，突出边界）
+                  strokeWeight: 5, // 边框宽度，清晰可见
+                  strokeOpacity: 1,
+                  strokeDasharray: [0], // 实线边框（更醒目）
+                  zIndex: 100 // 高亮层在底图上方，门店标记下方
+                });
+                map.add(polygon);
+                highlightPolygon.push(polygon); // 保存所有多边形，方便后续移除
               });
-              map.add(highlightPolygon);
-              // 自动放大到北京区域
+
+              // 自动放大到北京区域，突出显示
               map.setZoomAndCenter(12, [116.4, 40.2], {
                 animate: true,
                 duration: 300
               });
             } else {
-              // 取消高亮
-              if (highlightPolygon) {
-                map.remove(highlightPolygon);
+              // 取消高亮：移除所有填充多边形
+              if (highlightPolygon && highlightPolygon.length > 0) {
+                highlightPolygon.forEach(polygon => map.remove(polygon));
                 highlightPolygon = null;
               }
             }
           }
         });
 
-        // 2. 鼠标悬停显示边界线
+        // 鼠标悬停：显示北京边界线（不填充颜色）
         map.on('mousemove', function() {
           if (isSelected || beijingBorder.length === 0) return;
           
           if (hoverTimer) clearTimeout(hoverTimer);
           hoverTimer = setTimeout(function() {
-            if (!borderPolyline && !isSelected) {
-              // 显示边界线（所有环，确保完整显示北京边界）
+            if (!borderPolyline) {
               borderPolyline = new AMap.Polyline({
                 path: beijingBorder,
                 strokeColor: '#FF7A30',
-                strokeWeight: 3,
-                strokeOpacity: 0.9,
-                strokeDasharray: [3, 3],
-                zIndex: 50
+                strokeWeight: 4,
+                strokeOpacity: 0.8,
+                strokeDasharray: [5, 3],
+                zIndex: 100
               });
               map.add(borderPolyline);
             }
-          }, 800); // 缩短延迟，响应更快
+          }, 800);
         });
 
-        // 3. 鼠标离开移除边界线
+        // 鼠标离开：移除边界线
         map.on('mouseout', function() {
           if (isSelected) return;
           
@@ -319,7 +319,7 @@
         });
       }
 
-      // 第五步：标签控制（隐藏亚洲视角国家名称）
+      // 5. 标签控制（亚洲视角隐藏国家名称）
       function initLabelControl() {
         try {
           let labelLayer = new AMap.LabelLayer({
@@ -358,7 +358,6 @@
             labelLoader.load(['country', 'province', 'city']);
           });
 
-          // 缩放时更新国家标签显示
           map.on('zoomend', function() {
             if (labelLayer && labelLayer.getStyles()) {
               const newStyles = { ...labelLayer.getStyles() };
