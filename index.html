@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>宅小改门店地图（竖屏9:16版）</title>
+  <script type="text/javascript" src="https://webapi.amap.com/maps?v=1.4.15&key=6922e44c35671e12ff680f8005e9564b"></script>
+  <style>
+    * { 
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box;
+    }
+    body {
+      background: #1a1a1a;
+      padding: 10px;
+      overflow: hidden;
+    }
+    #mapContainer {
+      width: 100vw;
+      height: calc(100vw * 16 / 9);
+      max-height: 100vh;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      margin: 0 auto;
+    }
+    .custom-bubble {
+      padding: 10px 12px;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 14px;
+      max-width: 220px;
+      background: #FF7A30 !important;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+      border: none;
+    }
+    .custom-bubble strong {
+      font-size: 15px;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .custom-bubble p {
+      font-size: 12px;
+      line-height: 1.4;
+      opacity: 0.9;
+      margin: 0;
+    }
+    .loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      font-size: 16px;
+      background: rgba(0,0,0,0.7);
+      padding: 12px 24px;
+      border-radius: 6px;
+      z-index: 9999;
+    }
+    .control-hint {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #ccc;
+      font-size: 12px;
+      background: rgba(0,0,0,0.6);
+      padding: 8px 16px;
+      border-radius: 20px;
+      z-index: 999;
+      backdrop-filter: blur(4px);
+      white-space: nowrap;
+    }
+    .store-marker-hover {
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+    @media (max-width: 480px) {
+      #mapContainer {
+        width: 95vw;
+        height: calc(95vw * 16 / 9);
+      }
+      .custom-bubble {
+        max-width: 160px;
+        font-size: 13px;
+      }
+      .control-hint {
+        font-size: 11px;
+        padding: 6px 12px;
+        bottom: 15px;
+      }
+    }
+    @media (orientation: landscape) {
+      #mapContainer {
+        width: calc(100vh * 9 / 16);
+        height: 95vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="mapContainer"></div>
+  <div class="loading" id="loading">地图加载中...</div>
+  <div class="control-hint">
+    双击放大到北京 | 按"1"键高亮北京 | 点击标记看门店信息
+  </div>
+
+  <script>
+    window.onload = function() {
+      const loading = document.getElementById('loading');
+      let map, districtSearch;
+      const stores = [
+        { id:1, name:"宅小改京客隆望京店", lnglat:[116.49238,39.99157], addr:"北京市朝阳区望京南湖中园211号楼1楼" },
+        { id:2, name:"宅小改京客隆甜水园店", lnglat:[116.47682,39.93874], addr:"北京市朝阳区甜水园北里16号楼B1" },
+        { id:3, name:"宅小改京客隆针织路店", lnglat:[116.47895,39.93261], addr:"北京市朝阳区金台北街7号1楼" },
+        { id:4, name:"宅小改西单商场天通苑购物中心店", lnglat:[116.46871,40.07653], addr:"北京市昌平区天通苑购物中心B1" },
+        { id:5, name:"宅小改久隆百货店", lnglat:[116.49872,39.98015], addr:"北京市朝阳区酒仙桥路39号久隆百货B1" }
+      ];
+
+      try {
+        map = new AMap.Map('mapContainer', {
+          zoom: 10,
+          center: [116.4, 40.2],
+          mapStyle: "amap://styles/grey",
+          resizeEnable: true,
+          dragEnable: true,
+          zoomEnable: true,
+          scrollWheel: true,
+          doubleClickZoom: true,
+          touchZoom: true
+        });
+
+        map.on('complete', function() {
+          loading.style.display = 'none';
+        });
+
+        map.on('error', function(err) {
+          loading.textContent = '地图加载失败，请刷新重试';
+          console.error('地图加载错误:', err);
+        });
+      } catch (err) {
+        loading.textContent = '地图初始化失败，请检查网络';
+        console.error('地图初始化错误:', err);
+        return;
+      }
+
+      function addStoreMarkers() {
+        stores.forEach(store => {
+          const markerIcon = new AMap.Icon({
+            size: new AMap.Size(32, 32),
+            image: "https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-red.png",
+            imageSize: new AMap.Size(32, 32),
+            imageOffset: new AMap.Pixel(-16, -32)
+          });
+
+          const popup = new AMap.Popup({
+            content: `<div class="custom-bubble"><strong>${store.name}</strong><p>${store.addr}</p></div>`,
+            offset: new AMap.Pixel(0, -40),
+            closeWhenClickMap: true,
+            autoMove: true,
+            closeBtn: false
+          });
+
+          const marker = new AMap.Marker({
+            position: store.lnglat,
+            title: store.name,
+            icon: markerIcon,
+            zIndex: 100,
+            anchor: 'bottom-center'
+          });
+
+          marker.on('click', () => {
+            popup.open(map, store.lnglat);
+            marker.setScale(1.2);
+            setTimeout(() => marker.setScale(1), 300);
+          });
+
+          marker.on('mouseover', () => {
+            marker.setScale(1.3);
+            marker.setZIndex(200);
+            marker.getIcon().setSize(new AMap.Size(36, 36));
+          });
+
+          marker.on('mouseout', () => {
+            marker.setScale(1);
+            marker.setZIndex(100);
+            marker.getIcon().setSize(new AMap.Size(32, 32));
+          });
+
+          marker.setMap(map);
+        });
+      }
+
+      let beijingBorder = [];
+      let highlightPolygon = null;
+      let borderPolyline = null;
+      let isSelected = false;
+      let hoverTimer = null;
+
+      function loadBeijingBorder() {
+        AMap.plugin('AMap.DistrictSearch', function() {
+          districtSearch = new AMap.DistrictSearch({
+            extensions: 'all',
+            subdistrict: 0
+          });
+
+          districtSearch.search('北京市', function(status, result) {
+            if (status === 'complete' && result.districtList && result.districtList[0]) {
+              beijingBorder = result.districtList[0].boundaries;
+            } else {
+              console.error('北京边界数据加载失败');
+            }
+          });
+        });
+      }
+
+      map.on('dblclick', function() {
+        map.setZoomAndCenter(12, [116.4, 40.2], {
+          animate: true,
+          duration: 500
+        });
+      });
+
+      document.addEventListener('keydown', function(e) {
+        if (e.key === '1' && beijingBorder.length > 0) {
+          isSelected = !isSelected;
+
+          if (borderPolyline) {
+            map.remove(borderPolyline);
+            borderPolyline = null;
+          }
+
+          if (isSelected) {
+            highlightPolygon = new AMap.Polygon({
+              path: beijingBorder,
+              fillColor: '#FF7A30',
+              fillOpacity: 0.2,
+              strokeColor: '#FF7A30',
+              strokeWeight: 3,
+              strokeOpacity: 0.9,
+              strokeDasharray: [5, 5],
+              zIndex: 50
+            });
+            map.add(highlightPolygon);
+            map.setZoomAndCenter(12, [116.4, 40.2], {
+              animate: true,
+              duration: 300
+            });
+          } else {
+            if (highlightPolygon) {
+              map.remove(highlightPolygon);
+              highlightPolygon = null;
+            }
+          }
+        }
+      });
+
+      map.on('mousemove', function() {
+        if (isSelected || beijingBorder.length === 0) return;
+        
+        if (hoverTimer) clearTimeout(hoverTimer);
+        hoverTimer = setTimeout(function() {
+          if (!borderPolyline && !isSelected) {
+            borderPolyline = new AMap.Polyline({
+              path: beijingBorder[0],
+              strokeColor: '#FF7A30',
+              strokeWeight: 2,
+              strokeOpacity: 0.7,
+              strokeDasharray: [3, 3],
+              zIndex: 50
+            });
+            map.add(borderPolyline);
+          }
+        }, 1000);
+      });
+
+      map.on('mouseout', function() {
+        if (isSelected) return;
+        
+        if (hoverTimer) clearTimeout(hoverTimer);
+        if (borderPolyline) {
+          map.remove(borderPolyline);
+          borderPolyline = null;
+        }
+      });
+
+      addStoreMarkers();
+      loadBeijingBorder();
+
+      window.addEventListener('resize', function() {
+        map.resize();
+        if (map.getZoom() >= 10) {
+          map.setCenter([116.4, 40.2]);
+        }
+      });
+    };
+  </script>
+</body>
+</html>
