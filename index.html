@@ -121,9 +121,10 @@
         { id:5, name:"宅小改久隆百货店", lnglat:[116.49872,39.98015], addr:"北京市朝阳区酒仙桥路39号久隆百货B1" }
       ];
 
+      // 修复核心：简化标签逻辑，确保地图优先加载
       try {
         map = new AMap.Map('mapContainer', {
-          zoom: 10, // 初始北京视角（显示城市标签）
+          zoom: 10,
           center: [116.4, 40.2],
           mapStyle: "amap://styles/grey",
           resizeEnable: true,
@@ -132,132 +133,129 @@
           scrollWheel: true,
           doubleClickZoom: true,
           touchZoom: true,
-          // 核心配置：隐藏默认标签，后续手动控制
-          labels: false
+          labels: true // 恢复默认标签，避免加载失败
         });
-
-        // 加载自定义标签图层（控制国家/城市名称显示）
-        let labelLayer = new AMap.LabelLayer({
-          zIndex: 10,
-          zooms: [3, 18] // 标签显示的缩放范围（3=全球，18=街道）
-        });
-        map.add(labelLayer);
-
-        // 配置标签样式（和深灰色地图适配）
-        const labelStyle = {
-          country: { // 国家标签（缩放≤5时隐藏）
-            fontSize: 14,
-            fillColor: '#ccc',
-            strokeColor: 'transparent',
-            strokeWidth: 0,
-            fontWeight: 'normal',
-            opacity: 0
-          },
-          province: { // 省份标签（缩放>5时显示）
-            fontSize: 12,
-            fillColor: '#bbb',
-            strokeColor: 'transparent',
-            strokeWidth: 0,
-            opacity: 0.8
-          },
-          city: { // 城市标签（缩放>5时显示）
-            fontSize: 11,
-            fillColor: '#aaa',
-            strokeColor: 'transparent',
-            strokeWidth: 0,
-            opacity: 0.9
-          }
-        };
-
-        // 加载地图标签数据
-        AMap.plugin('AMap.LabelLoader', function() {
-          const labelLoader = new AMap.LabelLoader(labelLayer, {
-            style: labelStyle
-          });
-          // 加载国家、省份、城市三级标签（仅国家标签默认隐藏）
-          labelLoader.load(['country', 'province', 'city']);
-        });
-
-        // 核心逻辑：根据缩放级别控制国家标签显示/隐藏
-        function controlCountryLabels() {
-          const currentZoom = map.getZoom();
-          if (labelLayer && labelLayer.getStyles()) {
-            const newStyles = { ...labelLayer.getStyles() };
-            // 缩放级别 ≤5（亚洲视角）：隐藏国家标签；>5：显示国家标签
-            newStyles.country.opacity = currentZoom <= 5 ? 0 : 0.7;
-            labelLayer.setStyles(newStyles);
-          }
-        }
-
-        // 初始化时执行一次（初始缩放10，显示国家标签）
-        controlCountryLabels();
-
-        // 缩放变化时实时更新标签显示
-        map.on('zoomend', controlCountryLabels);
 
         // 地图加载完成
         map.on('complete', function() {
           loading.style.display = 'none';
+          
+          // 地图加载成功后，再添加标签控制逻辑（容错）
+          try {
+            // 加载自定义标签图层（控制国家名称显示）
+            let labelLayer = new AMap.LabelLayer({
+              zIndex: 10,
+              zooms: [3, 18]
+            });
+            map.add(labelLayer);
+
+            const labelStyle = {
+              country: {
+                fontSize: 14,
+                fillColor: '#ccc',
+                strokeColor: 'transparent',
+                strokeWidth: 0,
+                fontWeight: 'normal',
+                opacity: map.getZoom() <= 5 ? 0 : 0.7
+              },
+              province: {
+                fontSize: 12,
+                fillColor: '#bbb',
+                strokeColor: 'transparent',
+                strokeWidth: 0,
+                opacity: 0.8
+              },
+              city: {
+                fontSize: 11,
+                fillColor: '#aaa',
+                strokeColor: 'transparent',
+                strokeWidth: 0,
+                opacity: 0.9
+              }
+            };
+
+            AMap.plugin('AMap.LabelLoader', function() {
+              const labelLoader = new AMap.LabelLoader(labelLayer, { style: labelStyle });
+              labelLoader.load(['country', 'province', 'city']);
+            });
+
+            // 缩放控制国家标签
+            map.on('zoomend', function() {
+              if (labelLayer && labelLayer.getStyles()) {
+                const newStyles = { ...labelLayer.getStyles() };
+                newStyles.country.opacity = map.getZoom() <= 5 ? 0 : 0.7;
+                labelLayer.setStyles(newStyles);
+              }
+            });
+          } catch (e) {
+            console.log('标签控制加载失败，不影响地图核心功能', e);
+          }
         });
 
-        // 加载失败处理
+        // 加载失败处理（优化提示）
         map.on('error', function(err) {
-          loading.textContent = '地图加载失败，请刷新重试';
+          loading.textContent = '地图加载失败，刷新重试';
           console.error('地图加载错误:', err);
         });
       } catch (err) {
-        loading.textContent = '地图初始化失败，请检查网络';
+        loading.textContent = '地图初始化失败，刷新重试';
         console.error('地图初始化错误:', err);
         return;
       }
 
+      // 添加门店标记（确保执行）
       function addStoreMarkers() {
-        stores.forEach(store => {
-          const markerIcon = new AMap.Icon({
-            size: new AMap.Size(32, 32),
-            image: "https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-red.png",
-            imageSize: new AMap.Size(32, 32),
-            imageOffset: new AMap.Pixel(-16, -32)
-          });
+        try {
+          stores.forEach(store => {
+            const markerIcon = new AMap.Icon({
+              size: new AMap.Size(32, 32),
+              image: "https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-red.png",
+              imageSize: new AMap.Size(32, 32),
+              imageOffset: new AMap.Pixel(-16, -32)
+            });
 
-          const popup = new AMap.Popup({
-            content: `<div class="custom-bubble"><strong>${store.name}</strong><p>${store.addr}</p></div>`,
-            offset: new AMap.Pixel(0, -40),
-            closeWhenClickMap: true,
-            autoMove: true,
-            closeBtn: false
-          });
+            const popup = new AMap.Popup({
+              content: `<div class="custom-bubble"><strong>${store.name}</strong><p>${store.addr}</p></div>`,
+              offset: new AMap.Pixel(0, -40),
+              closeWhenClickMap: true,
+              autoMove: true,
+              closeBtn: false
+            });
 
-          const marker = new AMap.Marker({
-            position: store.lnglat,
-            title: store.name,
-            icon: markerIcon,
-            zIndex: 100,
-            anchor: 'bottom-center'
-          });
+            const marker = new AMap.Marker({
+              position: store.lnglat,
+              title: store.name,
+              icon: markerIcon,
+              zIndex: 100,
+              anchor: 'bottom-center'
+            });
 
-          marker.on('click', () => {
-            popup.open(map, store.lnglat);
-            marker.setScale(1.2);
-            setTimeout(() => marker.setScale(1), 300);
-          });
+            marker.on('click', () => {
+              popup.open(map, store.lnglat);
+              marker.setScale(1.2);
+              setTimeout(() => marker.setScale(1), 300);
+            });
 
-          marker.on('mouseover', () => {
-            marker.setScale(1.3);
-            marker.setZIndex(200);
-            marker.getIcon().setSize(new AMap.Size(36, 36));
-          });
+            marker.on('mouseover', () => {
+              marker.setScale(1.3);
+              marker.setZIndex(200);
+              marker.getIcon().setSize(new AMap.Size(36, 36));
+            });
 
-          marker.on('mouseout', () => {
-            marker.setScale(1);
-            marker.setZIndex(100);
-            marker.getIcon().setSize(new AMap.Size(32, 32));
-          });
+            marker.on('mouseout', () => {
+              marker.setScale(1);
+              marker.setZIndex(100);
+              marker.getIcon().setSize(new AMap.Size(32, 32));
+            });
 
-          marker.setMap(map);
-        });
+            marker.setMap(map);
+          });
+        } catch (e) {
+          console.error('门店标记加载失败:', e);
+        }
       }
 
+      // 加载北京边界（容错）
       let beijingBorder = [];
       let highlightPolygon = null;
       let borderPolyline = null;
@@ -265,22 +263,25 @@
       let hoverTimer = null;
 
       function loadBeijingBorder() {
-        AMap.plugin('AMap.DistrictSearch', function() {
-          districtSearch = new AMap.DistrictSearch({
-            extensions: 'all',
-            subdistrict: 0
-          });
+        try {
+          AMap.plugin('AMap.DistrictSearch', function() {
+            districtSearch = new AMap.DistrictSearch({
+              extensions: 'all',
+              subdistrict: 0
+            });
 
-          districtSearch.search('北京市', function(status, result) {
-            if (status === 'complete' && result.districtList && result.districtList[0]) {
-              beijingBorder = result.districtList[0].boundaries;
-            } else {
-              console.error('北京边界数据加载失败');
-            }
+            districtSearch.search('北京市', function(status, result) {
+              if (status === 'complete' && result.districtList && result.districtList[0]) {
+                beijingBorder = result.districtList[0].boundaries;
+              }
+            });
           });
-        });
+        } catch (e) {
+          console.error('北京边界加载失败:', e);
+        }
       }
 
+      // 双击放大
       map.on('dblclick', function() {
         map.setZoomAndCenter(12, [116.4, 40.2], {
           animate: true,
@@ -288,6 +289,7 @@
         });
       });
 
+      // 按1键高亮
       document.addEventListener('keydown', function(e) {
         if (e.key === '1' && beijingBorder.length > 0) {
           isSelected = !isSelected;
@@ -322,6 +324,7 @@
         }
       });
 
+      // 鼠标悬停显示边界
       map.on('mousemove', function() {
         if (isSelected || beijingBorder.length === 0) return;
         
@@ -351,14 +354,18 @@
         }
       });
 
+      // 初始化执行（确保调用）
       addStoreMarkers();
       loadBeijingBorder();
 
+      // 窗口 resize 处理
       window.addEventListener('resize', function() {
-        map.resize();
-        if (map.getZoom() >= 10) {
-          map.setCenter([116.4, 40.2]);
-        }
+        try {
+          map.resize();
+          if (map.getZoom() >= 10) {
+            map.setCenter([116.4, 40.2]);
+          }
+        } catch (e) {}
       });
     };
   </script>
