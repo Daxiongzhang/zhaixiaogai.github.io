@@ -65,20 +65,7 @@
       border-radius: 6px;
       z-index: 9999;
     }
-    .control-hint {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: #ccc;
-      font-size: 12px;
-      background: rgba(0,0,0,0.6);
-      padding: 8px 16px;
-      border-radius: 20px;
-      z-index: 999;
-      backdrop-filter: blur(4px);
-      white-space: nowrap;
-    }
+    /* 已删除底部提示词的样式（无需保留） */
     @media (orientation: landscape) {
       #mapContainer {
         width: calc(95vh * 9 / 16);
@@ -96,7 +83,7 @@
 <body>
   <div id="mapContainer"></div>
   <div class="loading" id="loading">地图加载中...</div>
-  <div class="control-hint">气泡颜色区分 | 9:16规格框 | 北京固定中心</div>
+  <!-- 已删除底部提示文字的DOM元素 -->
 
   <script>
     window.onload = function() {
