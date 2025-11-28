@@ -112,7 +112,7 @@
   <script>
     window.onload = function() {
       const loading = document.getElementById('loading');
-      let map, districtSearch;
+      let map;
       const stores = [
         { id:1, name:"宅小改京客隆望京店", lnglat:[116.49238,39.99157], addr:"北京市朝阳区望京南湖中园211号楼1楼" },
         { id:2, name:"宅小改京客隆甜水园店", lnglat:[116.47682,39.93874], addr:"北京市朝阳区甜水园北里16号楼B1" },
@@ -121,7 +121,14 @@
         { id:5, name:"宅小改久隆百货店", lnglat:[116.49872,39.98015], addr:"北京市朝阳区酒仙桥路39号久隆百货B1" }
       ];
 
-      // 修复核心：简化标签逻辑，确保地图优先加载
+      // 核心变量：确保边界数据全局可访问
+      let beijingBorder = [];
+      let highlightPolygon = null;
+      let borderPolyline = null;
+      let isSelected = false;
+      let hoverTimer = null;
+
+      // 第一步：优先初始化地图（确保基础功能可用）
       try {
         map = new AMap.Map('mapContainer', {
           zoom: 10,
@@ -133,66 +140,23 @@
           scrollWheel: true,
           doubleClickZoom: true,
           touchZoom: true,
-          labels: true // 恢复默认标签，避免加载失败
+          labels: true
         });
 
-        // 地图加载完成
+        // 地图加载完成后，再加载所有依赖功能
         map.on('complete', function() {
           loading.style.display = 'none';
           
-          // 地图加载成功后，再添加标签控制逻辑（容错）
-          try {
-            // 加载自定义标签图层（控制国家名称显示）
-            let labelLayer = new AMap.LabelLayer({
-              zIndex: 10,
-              zooms: [3, 18]
-            });
-            map.add(labelLayer);
-
-            const labelStyle = {
-              country: {
-                fontSize: 14,
-                fillColor: '#ccc',
-                strokeColor: 'transparent',
-                strokeWidth: 0,
-                fontWeight: 'normal',
-                opacity: map.getZoom() <= 5 ? 0 : 0.7
-              },
-              province: {
-                fontSize: 12,
-                fillColor: '#bbb',
-                strokeColor: 'transparent',
-                strokeWidth: 0,
-                opacity: 0.8
-              },
-              city: {
-                fontSize: 11,
-                fillColor: '#aaa',
-                strokeColor: 'transparent',
-                strokeWidth: 0,
-                opacity: 0.9
-              }
-            };
-
-            AMap.plugin('AMap.LabelLoader', function() {
-              const labelLoader = new AMap.LabelLoader(labelLayer, { style: labelStyle });
-              labelLoader.load(['country', 'province', 'city']);
-            });
-
-            // 缩放控制国家标签
-            map.on('zoomend', function() {
-              if (labelLayer && labelLayer.getStyles()) {
-                const newStyles = { ...labelLayer.getStyles() };
-                newStyles.country.opacity = map.getZoom() <= 5 ? 0 : 0.7;
-                labelLayer.setStyles(newStyles);
-              }
-            });
-          } catch (e) {
-            console.log('标签控制加载失败，不影响地图核心功能', e);
-          }
+          // 1. 加载门店标记（基础功能优先）
+          addStoreMarkers();
+          
+          // 2. 加载北京边界（高亮功能核心，单独处理加载逻辑）
+          loadBeijingBorder();
+          
+          // 3. 加载标签控制（隐藏亚洲视角国家名称）
+          initLabelControl();
         });
 
-        // 加载失败处理（优化提示）
         map.on('error', function(err) {
           loading.textContent = '地图加载失败，刷新重试';
           console.error('地图加载错误:', err);
@@ -203,7 +167,7 @@
         return;
       }
 
-      // 添加门店标记（确保执行）
+      // 第二步：修复门店标记（确保正常显示）
       function addStoreMarkers() {
         try {
           stores.forEach(store => {
@@ -255,108 +219,157 @@
         }
       }
 
-      // 加载北京边界（容错）
-      let beijingBorder = [];
-      let highlightPolygon = null;
-      let borderPolyline = null;
-      let isSelected = false;
-      let hoverTimer = null;
-
+      // 第三步：修复北京边界加载（关键！解决高亮失效核心）
       function loadBeijingBorder() {
-        try {
-          AMap.plugin('AMap.DistrictSearch', function() {
-            districtSearch = new AMap.DistrictSearch({
-              extensions: 'all',
-              subdistrict: 0
-            });
-
-            districtSearch.search('北京市', function(status, result) {
-              if (status === 'complete' && result.districtList && result.districtList[0]) {
-                beijingBorder = result.districtList[0].boundaries;
-              }
-            });
+        // 确保DistrictSearch插件加载成功后再执行
+        AMap.plugin('AMap.DistrictSearch', function() {
+          const districtSearch = new AMap.DistrictSearch({
+            extensions: 'all', // 必须带all，才能获取边界坐标
+            subdistrict: 0
           });
-        } catch (e) {
-          console.error('北京边界加载失败:', e);
-        }
+
+          // 搜索北京市，获取边界数据
+          districtSearch.search('北京市', function(status, result) {
+            if (status === 'complete' && result.districtList && result.districtList[0]) {
+              beijingBorder = result.districtList[0].boundaries;
+              console.log('北京边界加载成功，坐标数量:', beijingBorder.length);
+              
+              // 边界加载成功后，绑定所有交互事件（确保事件能触发）
+              bindBeijingInteractions();
+            } else {
+              console.error('北京边界加载失败，状态:', status, '结果:', result);
+              // 加载失败时重试一次（提高成功率）
+              setTimeout(() => districtSearch.search('北京市', arguments.callee), 1000);
+            }
+          });
+        });
       }
 
-      // 双击放大
-      map.on('dblclick', function() {
-        map.setZoomAndCenter(12, [116.4, 40.2], {
-          animate: true,
-          duration: 500
+      // 第四步：绑定北京区域交互事件（单独分离，确保边界加载后才绑定）
+      function bindBeijingInteractions() {
+        // 1. 按"1"键高亮/取消高亮
+        document.addEventListener('keydown', function(e) {
+          if (e.key === '1' && beijingBorder.length > 0) {
+            isSelected = !isSelected;
+
+            // 先移除原有边界线
+            if (borderPolyline) {
+              map.remove(borderPolyline);
+              borderPolyline = null;
+            }
+
+            if (isSelected) {
+              // 创建高亮多边形（填充+边框）
+              highlightPolygon = new AMap.Polygon({
+                path: beijingBorder, // 直接使用完整边界（支持多环区域）
+                fillColor: '#FF7A30',
+                fillOpacity: 0.3, // 提高透明度，更清晰
+                strokeColor: '#FF7A30',
+                strokeWeight: 4,
+                strokeOpacity: 1,
+                strokeDasharray: [5, 5],
+                zIndex: 50
+              });
+              map.add(highlightPolygon);
+              // 自动放大到北京区域
+              map.setZoomAndCenter(12, [116.4, 40.2], {
+                animate: true,
+                duration: 300
+              });
+            } else {
+              // 取消高亮
+              if (highlightPolygon) {
+                map.remove(highlightPolygon);
+                highlightPolygon = null;
+              }
+            }
+          }
         });
-      });
 
-      // 按1键高亮
-      document.addEventListener('keydown', function(e) {
-        if (e.key === '1' && beijingBorder.length > 0) {
-          isSelected = !isSelected;
+        // 2. 鼠标悬停显示边界线
+        map.on('mousemove', function() {
+          if (isSelected || beijingBorder.length === 0) return;
+          
+          if (hoverTimer) clearTimeout(hoverTimer);
+          hoverTimer = setTimeout(function() {
+            if (!borderPolyline && !isSelected) {
+              // 显示边界线（所有环，确保完整显示北京边界）
+              borderPolyline = new AMap.Polyline({
+                path: beijingBorder,
+                strokeColor: '#FF7A30',
+                strokeWeight: 3,
+                strokeOpacity: 0.9,
+                strokeDasharray: [3, 3],
+                zIndex: 50
+              });
+              map.add(borderPolyline);
+            }
+          }, 800); // 缩短延迟，响应更快
+        });
 
+        // 3. 鼠标离开移除边界线
+        map.on('mouseout', function() {
+          if (isSelected) return;
+          
+          if (hoverTimer) clearTimeout(hoverTimer);
           if (borderPolyline) {
             map.remove(borderPolyline);
             borderPolyline = null;
           }
+        });
+      }
 
-          if (isSelected) {
-            highlightPolygon = new AMap.Polygon({
-              path: beijingBorder,
-              fillColor: '#FF7A30',
-              fillOpacity: 0.2,
-              strokeColor: '#FF7A30',
-              strokeWeight: 3,
-              strokeOpacity: 0.9,
-              strokeDasharray: [5, 5],
-              zIndex: 50
-            });
-            map.add(highlightPolygon);
-            map.setZoomAndCenter(12, [116.4, 40.2], {
-              animate: true,
-              duration: 300
-            });
-          } else {
-            if (highlightPolygon) {
-              map.remove(highlightPolygon);
-              highlightPolygon = null;
+      // 第五步：标签控制（隐藏亚洲视角国家名称）
+      function initLabelControl() {
+        try {
+          let labelLayer = new AMap.LabelLayer({
+            zIndex: 10,
+            zooms: [3, 18]
+          });
+          map.add(labelLayer);
+
+          const labelStyle = {
+            country: {
+              fontSize: 14,
+              fillColor: '#ccc',
+              strokeColor: 'transparent',
+              strokeWidth: 0,
+              fontWeight: 'normal',
+              opacity: map.getZoom() <= 5 ? 0 : 0.7
+            },
+            province: {
+              fontSize: 12,
+              fillColor: '#bbb',
+              strokeColor: 'transparent',
+              strokeWidth: 0,
+              opacity: 0.8
+            },
+            city: {
+              fontSize: 11,
+              fillColor: '#aaa',
+              strokeColor: 'transparent',
+              strokeWidth: 0,
+              opacity: 0.9
             }
-          }
+          };
+
+          AMap.plugin('AMap.LabelLoader', function() {
+            const labelLoader = new AMap.LabelLoader(labelLayer, { style: labelStyle });
+            labelLoader.load(['country', 'province', 'city']);
+          });
+
+          // 缩放时更新国家标签显示
+          map.on('zoomend', function() {
+            if (labelLayer && labelLayer.getStyles()) {
+              const newStyles = { ...labelLayer.getStyles() };
+              newStyles.country.opacity = map.getZoom() <= 5 ? 0 : 0.7;
+              labelLayer.setStyles(newStyles);
+            }
+          });
+        } catch (e) {
+          console.log('标签控制加载失败，不影响核心功能', e);
         }
-      });
-
-      // 鼠标悬停显示边界
-      map.on('mousemove', function() {
-        if (isSelected || beijingBorder.length === 0) return;
-        
-        if (hoverTimer) clearTimeout(hoverTimer);
-        hoverTimer = setTimeout(function() {
-          if (!borderPolyline && !isSelected) {
-            borderPolyline = new AMap.Polyline({
-              path: beijingBorder[0],
-              strokeColor: '#FF7A30',
-              strokeWeight: 2,
-              strokeOpacity: 0.7,
-              strokeDasharray: [3, 3],
-              zIndex: 50
-            });
-            map.add(borderPolyline);
-          }
-        }, 1000);
-      });
-
-      map.on('mouseout', function() {
-        if (isSelected) return;
-        
-        if (hoverTimer) clearTimeout(hoverTimer);
-        if (borderPolyline) {
-          map.remove(borderPolyline);
-          borderPolyline = null;
-        }
-      });
-
-      // 初始化执行（确保调用）
-      addStoreMarkers();
-      loadBeijingBorder();
+      }
 
       // 窗口 resize 处理
       window.addEventListener('resize', function() {
